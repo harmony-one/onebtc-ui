@@ -1,5 +1,5 @@
 {
-  "name": "one-names.sdk-examples",
+  "name": "onebtc.sdk-ui-examples",
   "version": "0.1.0",
   "private": true,
   "dependencies": {
@@ -7,7 +7,8 @@
     "@testing-library/jest-dom": "^5.11.4",
     "@testing-library/react": "^11.1.0",
     "@testing-library/user-event": "^12.1.10",
-    "onebtc.sdk": "^1.0.2",
+    "bitcoinjs-lib": "^5.2.0",
+    "onebtc.sdk": "^1.0.3",
     "react": "^17.0.2",
     "react-dom": "^17.0.2",
     "react-scripts": "4.0.3",

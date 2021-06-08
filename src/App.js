@@ -1,7 +1,9 @@
 import "./App.css";
-import { getHmyClient } from "onebtc.sdk";
-import React, { useEffect, useState, useCallback } from "react";
-import detectEthereumProvider from "@metamask/detect-provider";
+import React, { useState } from "react";
+import { Wallet } from "./Client_Wallets";
+import { issue_tx_mock } from "onebtc.sdk/lib/helpers";
+const bitcoin = require("bitcoinjs-lib");
+const utils = require("web3-utils");
 
 const sleep = (sec) => new Promise((res) => setTimeout(res, sec * 1000));
 
@@ -11,171 +13,100 @@ const App = () => {
   const [metamaskAddress, setMetamask] = useState();
   const [oneWalletAddress, setOneWallet] = useState();
 
-  const [domain, setDomain] = useState();
-  const [owner, setOwner] = useState();
-  const [address, setAddress] = useState();
-  const [price, setPrice] = useState();
-
+  const [amount, setAmount] = useState();
+  const [error, setError] = useState();
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [status, setStatus] = useState("");
+  const [status, setStatus] = useState();
+  const [balance, setBalance] = useState(0);
 
-  const signInMetamask = useCallback(() => {
-    detectEthereumProvider().then((provider) => {
-      try {
-        // @ts-ignore
-        if (provider !== window.ethereum) {
-          console.error("Do you have multiple wallets installed?");
-        }
-
-        if (!provider) {
-          alert("Metamask not found");
-        }
-
-        provider.on("accountsChanged", (accounts) => setMetamask(accounts[0]));
-
-        provider.on("disconnect", () => {
-          setMetamask("");
-        });
-
-        provider
-          .request({ method: "eth_requestAccounts" })
-          .then(async (accounts) => {
-            setMetamask(accounts[0]);
-          });
-      } catch (e) {
-        console.error(e);
-      }
-    });
-  }, []);
-
-  const signInHarmony = useCallback(() => {
-    try {
-      // @ts-ignore
-      setTimeout(() => {
-        // @ts-ignore
-        window.onewallet
-          .getAccount()
-          .then(({ address }) => setOneWallet(address));
-      }, 3000);
-    } catch (e) {
-      console.error(e);
-    }
-  }, []);
-
-  // init HmyClient
-  useEffect(() => {
-    getHmyClient({
-      sdk: "harmony",
-      nodeURL: "https://api.s0.b.hmny.io",
-      chainId: 2,
-      ensAddress: "0x23ca23b6f2C40BF71fe4Da7C5d6396EE2C018e6A",
-      gasLimit: 6721900,
-    }).then(async (client) => {
-      client.setUseOneWallet(true);
-      setHmyClient(client);
-    });
-  }, []);
-
-  // init Web3Client
-  useEffect(() => {
-    getHmyClient({
-      sdk: "web3",
-      nodeURL: "https://api.s0.b.hmny.io",
-      chainId: 2,
-      ensAddress: "0x23ca23b6f2C40BF71fe4Da7C5d6396EE2C018e6A",
-      gasLimit: 6721900,
-    }).then(async (client) => {
-      client.setUseOneWallet(true);
-      setWeb3Client(client);
-    });
-  }, []);
-
-  const buyDomain = async (client, ownerAddress) => {
-    setLoading(true);
-    setError("");
+  const createIssue = async (hmyClient, address) => {
     setStatus("");
-
-    const domainName = domain ? domain.replace(".one", "") : "";
+    setError("");
+    setLoading(true);
 
     try {
-      const owner = ownerAddress;
-      const myAddress = ownerAddress;
-      const duration = 365 * 24 * 3600; // 1year
-      const domain = domainName;
-      const secret =
-        "0xe6bcec774acd54b71bd49ca5570f4bae074e7d983cad8a3162b480219adecdea";
+      // let res = await hmyClient.methods.web3.eth.getBalance(address);
 
-      setOwner(await client.methods.ens.name(domain + ".one").getOwner());
-      setAddress(await client.methods.ens.name(domain + ".one").getAddress());
+      // console.log("User balance: ", Number(res) / 1e18);
+      const issueAmount = amount * 1e9;
 
-      const rentPrice = await client.methods.rentPrice(domain, duration);
-
-      setPrice(rentPrice / 1e18);
-
-      setStatus("1 - rentPrice: " + rentPrice / 1e18);
-
-      console.log(domain, owner, duration, secret, myAddress);
-
-      const commitment = await client.methods.makeCommitment(
-        domain,
-        owner,
-        duration,
-        secret,
-        myAddress
+      let res = await hmyClient.methods.requestIssue(
+        issueAmount,
+        "0xFbE0741bC1B52dD723A6bfA145E0a15803AC9581"
       );
 
-      setStatus("2 - commit: " + commitment);
+      setStatus("Request Issue tx: " + res.status);
+      console.log("Request Issue tx: " + res);
 
-      await client.methods.commit(commitment);
+      // setBalance(Number(await hmyClient.methods.balanceOf(address)) / 1e18);
 
-      setStatus("3 - sleep 15 sec");
-
-      await sleep(15);
-
-      setStatus("4 - register");
-
-      const res = await client.methods.register(
-        domain,
-        owner,
-        duration,
-        secret,
-        myAddress
+      ///////
+      const IssueEvent = await hmyClient.methods.getIssueDetails(
+        res.transactionHash
       );
 
-      setStatus("5 - register result: " + res.status);
+      console.log("issueDetails: ", IssueEvent);
 
-      setOwner(await client.methods.ens.name(domain + ".one").getOwner());
-      setAddress(await client.methods.ens.name(domain + ".one").getAddress());
+      setStatus("start execute issue ----");
+
+      /////////////////////////////////////////////
+      const issue_id = IssueEvent.issue_id;
+      const btc_address = IssueEvent.btc_address;
+      const btc_base58 = bitcoin.address.toBase58Check(
+        Buffer.from(btc_address.slice(2), "hex"),
+        0
+      );
+      const btcTx = issue_tx_mock(
+        utils.toBN(issue_id),
+        btc_base58,
+        issueAmount
+      );
+      const btcBlockNumberMock = 1000;
+      const btcTxIndexMock = 2;
+      const heightAndIndex = (btcBlockNumberMock << 32) | btcTxIndexMock;
+      const headerMock = Buffer.alloc(0);
+      const proofMock = Buffer.alloc(0);
+
+      await hmyClient.methods.executeIssue(
+        address,
+        issue_id,
+        proofMock,
+        btcTx.toBuffer(),
+        heightAndIndex,
+        headerMock
+      );
+      ////////////////////////////////////////////////////////////
+
+      setStatus("Execute issue tx: ", res.status);
+
+      // setBalance(Number(await hmyClient.methods.balanceOf(address)) / 1e18);
     } catch (e) {
-      console.error(e);
+      debugger;
       setError(e && e.message);
+      console.error(e);
     }
 
     setLoading(false);
   };
 
+  setInterval(async () => {
+    if (web3Client && metamaskAddress) {
+      // console.log(111, metamaskAddress);
+
+      const balance = await web3Client.methods.balanceOf(metamaskAddress);
+
+      setBalance(balance);
+    }
+  }, 4000);
+
   return (
     <div className="App">
-      {!hmyClient && <div>Init one-names SDK...</div>}
-      <div>
-        {oneWalletAddress ? (
-          <div>OneWallet address: {oneWalletAddress}</div>
-        ) : (
-          <button disabled={!hmyClient} onClick={signInHarmony}>
-            sign in OneWallet
-          </button>
-        )}
-      </div>
-      <div>
-        {metamaskAddress ? (
-          <div>Metamask address: {metamaskAddress}</div>
-        ) : (
-          <button disabled={!hmyClient} onClick={signInMetamask}>
-            sign in Metamask
-          </button>
-        )}
-      </div>
+      <Wallet
+        onSetMetamask={setMetamask}
+        onSetOneWallet={setOneWallet}
+        onSetWeb3Client={setWeb3Client}
+        onSetHmyClient={(v) => v && setHmyClient(v)}
+      />
       <div>
         <div>Operation in progress: {loading.toString()}</div>
         {error && <div style={{ color: "red" }}>Error: {error}</div>}
@@ -184,29 +115,29 @@ const App = () => {
         )}
       </div>
       <div>
-        Domain:{" "}
+        Amount:{" "}
         <input
-          value={domain}
-          disabled={!hmyClient}
-          onChange={(evt) => setDomain(evt.target.value)}
+          value={amount}
+          disabled={!web3Client}
+          onChange={(evt) => setAmount(evt.target.value)}
         />
       </div>
       <button
-        onClick={() => buyDomain(hmyClient, oneWalletAddress)}
-        disabled={!hmyClient || !oneWalletAddress}
+        onClick={() => createIssue(web3Client, metamaskAddress)}
+        disabled={!web3Client || !metamaskAddress}
       >
-        Check and Buy Domain with OneWallet
+        Create Issue with Metamask
       </button>
-      <button
-        onClick={() => buyDomain(web3Client, metamaskAddress)}
-        disabled={!hmyClient || !metamaskAddress}
-      >
-        Check and Buy Domain with Metamask
-      </button>
-      <div>Domain name: {domain}</div>
-      <div>Domain price: {price}</div>
-      <div>Domain owner: {owner}</div>
-      <div>Domain address: {address}</div>
+      {/*<button*/}
+      {/*  onClick={() => buyDomain(web3Client, metamaskAddress)}*/}
+      {/*  disabled={!hmyClient || !metamaskAddress}*/}
+      {/*>*/}
+      {/*  Check and Buy Domain with Metamask*/}
+      {/*</button>*/}
+      {/*<div>Domain name: {domain}</div>*/}
+      {/*<div>Domain price: {price}</div>*/}
+      <div>Vault address: 0xFbE0741bC1B52dD723A6bfA145E0a15803AC9581</div>
+      <div>1BTC balance: {balance / 1e9}</div>
     </div>
   );
 };
